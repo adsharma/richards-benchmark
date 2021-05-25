@@ -22,7 +22,7 @@
 
 # For character-based output.
 from sys import stdout
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, IntFlag
 from typing import Any, Callable, Optional, List, Union
 
@@ -76,6 +76,7 @@ class Packet:
     id: int
     kind: Kind
     a1: int = 0
+    a2: List[int] = field(default_factory=list)
 
     def __post_init__(self):
         self.a1 = 0
@@ -91,7 +92,7 @@ tasktab: List[Union[int, "Task"]] = [10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 class Task:
     id: int
     pri: int
-    wkq: Union[int, "Task"]
+    wkq: Union[int, "Packet"]
     state: SocketState
     fn: Callable
     v1: Union[int, "Task"]
@@ -104,7 +105,7 @@ class Task:
 
 # Variables used in global statements
 tasklist = 0
-tcb = None
+tcb = 0
 taskid = 0
 v1: Union[int, Task, Packet] = 0
 v2: Union[int, Task, Packet] = 0
@@ -134,6 +135,7 @@ def schedule():
         done = False
         if sw == SocketState.WAITPKT:
             pkt = tcb.wkq
+            assert isinstance(pkt, Packet)
             tcb.wkq = pkt.link
             if tcb.wkq == 0:
                 tcb.state = SocketState.RUN
@@ -177,7 +179,9 @@ def holdself():
 
 def findtcb(id: int) -> Union[int, Task]:
     t = 0
-    if 1 <= id and id <= tasktab[0]:
+    id0 = tasktab[0]
+    assert isinstance(id0, int)
+    if 1 <= id and id <= id0:
         t = tasktab[id]
     if t == 0:
         print("Bad task id %i" % id)
@@ -262,15 +266,18 @@ def handlerfn(pkt):
     global v1, v2
     if pkt != 0:
         if pkt.kind == Kind.K_WORK:
+            assert isinstance(v1, (Packet, int))
             x = Packet(v1, 0, Kind.K_DEV)
             append(pkt, x)
             v1 = x.link
         else:
+            assert isinstance(v2, (Packet, int))
             x = Packet(v2, 0, Kind.K_DEV)
             append(pkt, x)
             v2 = x.link
 
     if v1 != 0:
+        assert isinstance(v1, Packet)
         workpkt = v1
         count = workpkt.a1
 
@@ -279,7 +286,7 @@ def handlerfn(pkt):
             return qpkt(workpkt)
 
         if v2 != 0:
-
+            assert isinstance(v2, Packet)
             devpkt = v2
             v2 = v2.link
             devpkt.a1 = workpkt.a2[count]
