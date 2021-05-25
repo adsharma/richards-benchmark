@@ -22,18 +22,15 @@
 
 # For character-based output.
 from sys import stdout
+from dataclasses import dataclass
+from typing import Any, Callable, Optional, List, Union
 
 # Change False to True for a version that obeys
 # the main loop 100x more often)
 
-if False:
-    Count = 10000 * 100
-    Qpktcountval = 2326410
-    Holdcountval = 930563
-else:
-    Count = 10000
-    Qpktcountval = 23246
-    Holdcountval = 9297
+Count = 10000
+Qpktcountval = 23246
+Holdcountval = 9297
 
 
 MAXINT = 32767
@@ -65,40 +62,44 @@ K_DEV = 1000
 K_WORK = 1001
 
 
+@dataclass
 class Packet:
-    def __init__(p, link, id, kind):
-        p.link = link
-        p.id = id
-        p.kind = kind
-        p.a1 = 0
-        p.a2 = [0] * (BUFSIZE + 1)
+    link: Union["Packet", int]
+    id: int
+    kind: int
+    a1: int = 0
 
-
-class Task:
-    def __init__(t, id, pri, wkq, state, fn, v1, v2):
-        global tasklist
-        tasktab[id] = t
-        t.link = tasklist
-        t.id = id
-        t.pri = pri
-        t.wkq = wkq
-        t.state = state
-        t.fn = fn
-        t.v1 = v1
-        t.v2 = v2
-        tasklist = t
+    def __post_init__(self):
+        self.a1 = 0
+        self.a2 = [0] * (BUFSIZE + 1)
 
 
 alphabet = "0ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-tasktab = [10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+tasktab: List[Union[int, "Task"]] = [10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+
+@dataclass
+class Task:
+    id: int
+    pri: int
+    wkq: Any
+    state: int
+    fn: Callable
+    v1: Any
+    v2: Any
+    def __post_init__(self):
+        global tasklist
+        tasktab[self.id] = self
+        self.link = tasklist
+        tasklist = self
 
 # Variables used in global statements
 tasklist = 0
 tcb = None
 taskid = 0
-v1 = 0
-v2 = 0
+v1: Union[int, Task, Packet] = 0
+v2: Union[int, Task, Packet] = 0
 qpktcount = 0
 holdcount = 0
 tracing = 0
@@ -119,6 +120,7 @@ def schedule():
     global tcb, taskid, v1, v2
     while tcb != 0:
         pkt = 0
+        assert isinstance(tcb, Task)
 
         sw = tcb.state
         done = False
@@ -152,6 +154,7 @@ def schedule():
 
 
 def wait():
+    assert isinstance(tcb, Task)
     tcb.state |= WAITBIT
     return tcb
 
@@ -159,11 +162,12 @@ def wait():
 def holdself():
     global holdcount
     holdcount += 1
+    assert isinstance(tcb, Task)
     tcb.state |= HOLDBIT
     return tcb.link
 
 
-def findtcb(id):
+def findtcb(id: int) -> Union[int, Task]:
     t = 0
     if 1 <= id and id <= tasktab[0]:
         t = tasktab[id]
@@ -172,11 +176,13 @@ def findtcb(id):
     return t
 
 
-def release(id):
+def release(id) -> Union[int, Task]:
     t = findtcb(id)
     if t == 0:
         return 0
 
+    assert isinstance(t, Task)
+    assert isinstance(tcb, Task)
     t.state &= NOTHOLDBIT
     if t.pri > tcb.pri:
         return t
@@ -189,6 +195,8 @@ def qpkt(pkt):
     t = findtcb(pkt.id)
     if t == 0:
         return t
+    assert isinstance(t, Task)
+    assert isinstance(tcb, Task)
 
     qpktcount += 1
 
@@ -208,6 +216,8 @@ def qpkt(pkt):
 
 def idlefn(pkt):
     global v1, v2
+    assert isinstance(v1, int)
+    assert isinstance(v2, int)
     v2 -= 1
     if v2 == 0:
         return holdself()
@@ -226,6 +236,8 @@ def workfn(pkt):
         return wait()
     else:
 
+        assert isinstance(v1, int)
+        assert isinstance(v2, int)
         v1 = I_HANDLERA + I_HANDLERB - v1
         pkt.id = v1
 
