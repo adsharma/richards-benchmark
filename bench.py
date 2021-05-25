@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-#  C version of the systems programming language benchmark 
-#  Author:  M. J. Jordan  Cambridge Computer Laboratory. 
-#  
+#  C version of the systems programming language benchmark
+#  Author:  M. J. Jordan  Cambridge Computer Laboratory.
+#
 #  Modified by:  M. Richards, Nov 1996
 #    to be ANSI C and runnable on 64 bit machines + other minor changes
 #  Modified by:  M. Richards, 20 Oct 1998
@@ -27,53 +27,55 @@ from sys import stdout
 # the main loop 100x more often)
 
 if False:
-    Count           = 10000*100
-    Qpktcountval    = 2326410
-    Holdcountval     = 930563
+    Count = 10000 * 100
+    Qpktcountval = 2326410
+    Holdcountval = 930563
 else:
-    Count           = 10000
-    Qpktcountval    = 23246
-    Holdcountval     = 9297
+    Count = 10000
+    Qpktcountval = 23246
+    Holdcountval = 9297
 
 
-MAXINT          = 32767
+MAXINT = 32767
 
-BUFSIZE         = 3
-I_IDLE          = 1
-I_WORK          = 2
-I_HANDLERA      = 3
-I_HANDLERB      = 4
-I_DEVA          = 5
-I_DEVB          = 6
-PKTBIT          = 1
-WAITBIT         = 2
-HOLDBIT         = 4
-NOTPKTBIT       = ~1
-NOTWAITBIT      = ~2
-NOTHOLDBIT      = 0XFFFB
+BUFSIZE = 3
+I_IDLE = 1
+I_WORK = 2
+I_HANDLERA = 3
+I_HANDLERB = 4
+I_DEVA = 5
+I_DEVB = 6
+PKTBIT = 1
+WAITBIT = 2
+HOLDBIT = 4
+NOTPKTBIT = ~1
+NOTWAITBIT = ~2
+NOTHOLDBIT = 0xFFFB
 
-S_RUN           = 0
-S_RUNPKT        = 1
-S_WAIT          = 2
-S_WAITPKT       = 3
-S_HOLD          = 4
-S_HOLDPKT       = 5
-S_HOLDWAIT      = 6
-S_HOLDWAITPKT   = 7
+S_RUN = 0
+S_RUNPKT = 1
+S_WAIT = 2
+S_WAITPKT = 3
+S_HOLD = 4
+S_HOLDPKT = 5
+S_HOLDWAIT = 6
+S_HOLDWAITPKT = 7
 
-K_DEV           = 1000
-K_WORK          = 1001
+K_DEV = 1000
+K_WORK = 1001
+
 
 class Packet:
-    def __init__(p,link, id, kind):
+    def __init__(p, link, id, kind):
         p.link = link
         p.id = id
         p.kind = kind
         p.a1 = 0
-        p.a2 = [0]*(BUFSIZE+1)
+        p.a2 = [0] * (BUFSIZE + 1)
+
 
 class Task:
-    def __init__(t,id, pri, wkq, state, fn, v1, v2):
+    def __init__(t, id, pri, wkq, state, fn, v1, v2):
         global tasklist
         tasktab[id] = t
         t.link = tasklist
@@ -86,35 +88,37 @@ class Task:
         t.v2 = v2
         tasklist = t
 
+
 alphabet = "0ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-tasktab  =  [10,0,0,0,0,0,0,0,0,0,0]
+tasktab = [10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 # Variables used in global statements
-tasklist    =  0
-tcb         = None
-taskid      = 0
-v1          = 0
-v2          = 0
-qpktcount   =  0
-holdcount   =  0
-tracing     =  0
-layout      =  0
+tasklist = 0
+tcb = None
+taskid = 0
+v1 = 0
+v2 = 0
+qpktcount = 0
+holdcount = 0
+tracing = 0
+layout = 0
 
 
 def trace(a):
     global layout
-    layout-=1
-    if (layout <= 0 ):
-        stdout.write('\n')
+    layout -= 1
+    if layout <= 0:
+        stdout.write("\n")
         layout = 50
 
     stdout.write(chr(a))
 
+
 def schedule():
-    global tcb,taskid,v1,v2
-    while ( tcb != 0 ):
-        pkt=0
+    global tcb, taskid, v1, v2
+    while tcb != 0:
+        pkt = 0
 
         sw = tcb.state
         done = False
@@ -127,11 +131,11 @@ def schedule():
                 tcb.state = S_RUNPKT
 
         if sw in [S_WAITPKT, S_RUN, S_RUNPKT]:
-            taskid = tcb.id;
-            v1 = tcb.v1;
-            v2 = tcb.v2;
-            if (tracing):
-                trace(taskid+ord('0'))
+            taskid = tcb.id
+            v1 = tcb.v1
+            v2 = tcb.v2
+            if tracing:
+                trace(taskid + ord("0"))
 
             newtcb = tcb.fn(pkt)
             tcb.v1 = v1
@@ -146,135 +150,146 @@ def schedule():
         if not done:
             return
 
+
 def wait():
     tcb.state |= WAITBIT
-    return (tcb)
+    return tcb
+
 
 def holdself():
     global holdcount
-    holdcount +=1
+    holdcount += 1
     tcb.state |= HOLDBIT
-    return (tcb.link)
+    return tcb.link
+
 
 def findtcb(id):
     t = 0
-    if (1<=id and id<=tasktab[0]):
+    if 1 <= id and id <= tasktab[0]:
         t = tasktab[id]
-    if (t==0):
-        print("Bad task id %i"%id)
-    return(t)
+    if t == 0:
+        print("Bad task id %i" % id)
+    return t
+
 
 def release(id):
     t = findtcb(id)
-    if ( t==0 ):
-        return (0)
+    if t == 0:
+        return 0
 
     t.state &= NOTHOLDBIT
-    if ( t.pri > tcb.pri ):
-        return (t)
+    if t.pri > tcb.pri:
+        return t
 
-    return (tcb)
+    return tcb
+
 
 def qpkt(pkt):
     global qpktcount
     t = findtcb(pkt.id)
-    if (t==0):
-        return (t)
+    if t == 0:
+        return t
 
-    qpktcount +=1
+    qpktcount += 1
 
     pkt.link = 0
     pkt.id = taskid
 
-    if (t.wkq==0):
+    if t.wkq == 0:
         t.wkq = pkt
         t.state |= PKTBIT
-        if (t.pri > tcb.pri):
-            return (t)
+        if t.pri > tcb.pri:
+            return t
     else:
         append(pkt, t.wkq)
 
-    return (tcb)
+    return tcb
+
 
 def idlefn(pkt):
-    global v1,v2
-    v2 -=1
-    if ( v2==0 ):
-        return ( holdself() )
+    global v1, v2
+    v2 -= 1
+    if v2 == 0:
+        return holdself()
 
-    if ( (v1&1) == 0 ):
-        v1 = ( v1>>1) & MAXINT
-        return ( release(I_DEVA) )
+    if (v1 & 1) == 0:
+        v1 = (v1 >> 1) & MAXINT
+        return release(I_DEVA)
     else:
-        v1 = ( (v1>>1) & MAXINT) ^ 0XD008
-        return ( release(I_DEVB) )
+        v1 = ((v1 >> 1) & MAXINT) ^ 0xD008
+        return release(I_DEVB)
+
 
 def workfn(pkt):
-    global v1,v2
-    if ( pkt==0 ):
-        return ( wait() )
+    global v1, v2
+    if pkt == 0:
+        return wait()
     else:
 
         v1 = I_HANDLERA + I_HANDLERB - v1
         pkt.id = v1
 
         pkt.a1 = 0
-        for i in range(0,BUFSIZE+1):
+        for i in range(0, BUFSIZE + 1):
             v2 += 1
-            if ( v2 > 26 ):
+            if v2 > 26:
                 v2 = 1
             pkt.a2[i] = ord(alphabet[v2])
-        return ( qpkt(pkt) )
+        return qpkt(pkt)
+
 
 def handlerfn(pkt):
-    global v1,v2
-    if ( pkt!=0):
-        if pkt.kind==K_WORK:
-            x = Packet(v1,0,0)
+    global v1, v2
+    if pkt != 0:
+        if pkt.kind == K_WORK:
+            x = Packet(v1, 0, 0)
             append(pkt, x)
             v1 = x.link
         else:
-            x = Packet(v2,0,0)
+            x = Packet(v2, 0, 0)
             append(pkt, x)
             v2 = x.link
 
-    if ( v1!=0 ):
+    if v1 != 0:
         workpkt = v1
         count = workpkt.a1
 
-        if ( count > BUFSIZE ):
+        if count > BUFSIZE:
             v1 = v1.link
-            return ( qpkt(workpkt) )
+            return qpkt(workpkt)
 
-        if ( v2!=0 ):
+        if v2 != 0:
 
             devpkt = v2
             v2 = v2.link
             devpkt.a1 = workpkt.a2[count]
-            workpkt.a1 = count+1
-            return( qpkt(devpkt) )
+            workpkt.a1 = count + 1
+            return qpkt(devpkt)
     return wait()
+
 
 def devfn(pkt):
     global v1
-    if ( pkt==0 ):
-        if ( v1==0 ):
-            return ( wait() )
+    if pkt == 0:
+        if v1 == 0:
+            return wait()
         pkt = v1
         v1 = 0
-        return ( qpkt(pkt) )
+        return qpkt(pkt)
     else:
         v1 = pkt
-        if (tracing):
+        if tracing:
             trace(pkt.a1)
-        return ( holdself() )
+        return holdself()
+
 
 def append(pkt, ptr):
     pkt.link = 0
-    while ( ptr.link ):
+    while ptr.link:
         ptr = ptr.link
 
     ptr.link = pkt
+
 
 def bench():
     global tcb, qpktcount, holdcount, tracing, layout
@@ -318,11 +333,10 @@ def bench():
 
     print("\nfinished")
 
-    print("qpkt count = %i  holdcount = %i"%(
-           qpktcount, holdcount))
+    print("qpkt count = %i  holdcount = %i" % (qpktcount, holdcount))
 
-    print("These results are", end=' ')
-    if (qpktcount == Qpktcountval and holdcount == Holdcountval):
+    print("These results are", end=" ")
+    if qpktcount == Qpktcountval and holdcount == Holdcountval:
         print("correct")
     else:
         print("incorrect")
@@ -330,6 +344,7 @@ def bench():
     print("end of run")
     return 0
 
+
 # Perform the Bench mark:
-if __name__ == '__main__':
+if __name__ == "__main__":
     bench()
