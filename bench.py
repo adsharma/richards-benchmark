@@ -23,6 +23,7 @@
 # For character-based output.
 from sys import stdout
 from dataclasses import dataclass
+from enum import IntEnum, IntFlag
 from typing import Any, Callable, Optional, List, Union
 
 # Change False to True for a version that obeys
@@ -36,37 +37,44 @@ Holdcountval = 9297
 MAXINT = 32767
 
 BUFSIZE = 3
-I_IDLE = 1
-I_WORK = 2
-I_HANDLERA = 3
-I_HANDLERB = 4
-I_DEVA = 5
-I_DEVB = 6
-PKTBIT = 1
-WAITBIT = 2
-HOLDBIT = 4
-NOTPKTBIT = ~1
-NOTWAITBIT = ~2
-NOTHOLDBIT = 0xFFFB
 
-S_RUN = 0
-S_RUNPKT = 1
-S_WAIT = 2
-S_WAITPKT = 3
-S_HOLD = 4
-S_HOLDPKT = 5
-S_HOLDWAIT = 6
-S_HOLDWAITPKT = 7
+class InterfaceState(IntEnum):
+    I_IDLE = 1
+    I_WORK = 2
+    I_HANDLERA = 3
+    I_HANDLERB = 4
+    I_DEVA = 5
+    I_DEVB = 6
 
-K_DEV = 1000
-K_WORK = 1001
 
+class SocketState(IntFlag):
+    RUNBIT = 0
+    PKTBIT = 1
+    WAITBIT = 2
+    HOLDBIT = 4
+    NOTPKTBIT = ~1
+    NOTWAITBIT = ~2
+    NOTHOLDBIT = 0xFFFB
+
+    RUN = RUNBIT
+    RUNPKT = RUNBIT | PKTBIT
+    WAIT = WAITBIT
+    WAITPKT = WAITBIT | PKTBIT
+    HOLD = HOLDBIT
+    HOLDPKT = HOLDBIT | PKTBIT
+    HOLDWAIT = HOLDBIT | WAITBIT
+    HOLDWAITPKT = HOLDBIT | WAITBIT | PKTBIT
+
+
+class Kind(IntEnum):
+    K_DEV = 1000
+    K_WORK = 1001
 
 @dataclass
 class Packet:
     link: Union["Packet", int]
     id: int
-    kind: int
+    kind: Kind
     a1: int = 0
 
     def __post_init__(self):
@@ -83,11 +91,11 @@ tasktab: List[Union[int, "Task"]] = [10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 class Task:
     id: int
     pri: int
-    wkq: Any
-    state: int
+    wkq: Union[int, "Task"]
+    state: SocketState
     fn: Callable
-    v1: Any
-    v2: Any
+    v1: Union[int, "Task"]
+    v2: Union[int, "Task"]
     def __post_init__(self):
         global tasklist
         tasktab[self.id] = self
@@ -124,15 +132,15 @@ def schedule():
 
         sw = tcb.state
         done = False
-        if sw == S_WAITPKT:
+        if sw == SocketState.WAITPKT:
             pkt = tcb.wkq
             tcb.wkq = pkt.link
             if tcb.wkq == 0:
-                tcb.state = S_RUN
+                tcb.state = SocketState.RUN
             else:
-                tcb.state = S_RUNPKT
+                tcb.state = SocketState.RUNPKT
 
-        if sw in [S_WAITPKT, S_RUN, S_RUNPKT]:
+        if sw in [SocketState.WAITPKT, SocketState.RUN, SocketState.RUNPKT]:
             taskid = tcb.id
             v1 = tcb.v1
             v2 = tcb.v2
@@ -145,7 +153,7 @@ def schedule():
             tcb = newtcb
             done = True
 
-        if sw in [S_WAIT, S_HOLD, S_HOLDPKT, S_HOLDWAIT, S_HOLDWAITPKT]:
+        if sw in [SocketState.WAIT, SocketState.HOLD, SocketState.HOLDPKT, SocketState.HOLDWAIT, SocketState.HOLDWAITPKT]:
             tcb = tcb.link
             done = True
 
@@ -155,7 +163,7 @@ def schedule():
 
 def wait():
     assert isinstance(tcb, Task)
-    tcb.state |= WAITBIT
+    tcb.state |= SocketState.WAITBIT
     return tcb
 
 
@@ -163,7 +171,7 @@ def holdself():
     global holdcount
     holdcount += 1
     assert isinstance(tcb, Task)
-    tcb.state |= HOLDBIT
+    tcb.state |= SocketState.HOLDBIT
     return tcb.link
 
 
@@ -183,7 +191,7 @@ def release(id) -> Union[int, Task]:
 
     assert isinstance(t, Task)
     assert isinstance(tcb, Task)
-    t.state &= NOTHOLDBIT
+    t.state &= SocketState.NOTHOLDBIT
     if t.pri > tcb.pri:
         return t
 
@@ -205,7 +213,7 @@ def qpkt(pkt):
 
     if t.wkq == 0:
         t.wkq = pkt
-        t.state |= PKTBIT
+        t.state |= SocketState.PKTBIT
         if t.pri > tcb.pri:
             return t
     else:
@@ -224,10 +232,10 @@ def idlefn(pkt):
 
     if (v1 & 1) == 0:
         v1 = (v1 >> 1) & MAXINT
-        return release(I_DEVA)
+        return release(InterfaceState.I_DEVA)
     else:
         v1 = ((v1 >> 1) & MAXINT) ^ 0xD008
-        return release(I_DEVB)
+        return release(InterfaceState.I_DEVB)
 
 
 def workfn(pkt):
@@ -238,7 +246,7 @@ def workfn(pkt):
 
         assert isinstance(v1, int)
         assert isinstance(v2, int)
-        v1 = I_HANDLERA + I_HANDLERB - v1
+        v1 = InterfaceState.I_HANDLERA + InterfaceState.I_HANDLERB - v1
         pkt.id = v1
 
         pkt.a1 = 0
@@ -253,12 +261,12 @@ def workfn(pkt):
 def handlerfn(pkt):
     global v1, v2
     if pkt != 0:
-        if pkt.kind == K_WORK:
-            x = Packet(v1, 0, 0)
+        if pkt.kind == Kind.K_WORK:
+            x = Packet(v1, 0, Kind.K_DEV)
             append(pkt, x)
             v1 = x.link
         else:
-            x = Packet(v2, 0, 0)
+            x = Packet(v2, 0, Kind.K_DEV)
             append(pkt, x)
             v2 = x.link
 
@@ -309,28 +317,28 @@ def bench():
 
     print("Bench mark starting")
 
-    Task(I_IDLE, 0, wkq, S_RUN, idlefn, 1, Count)
+    Task(InterfaceState.I_IDLE, 0, wkq, SocketState.RUN, idlefn, 1, Count)
 
-    wkq = Packet(0, 0, K_WORK)
-    wkq = Packet(wkq, 0, K_WORK)
+    wkq = Packet(0, 0, Kind.K_WORK)
+    wkq = Packet(wkq, 0, Kind.K_WORK)
 
-    Task(I_WORK, 1000, wkq, S_WAITPKT, workfn, I_HANDLERA, 0)
+    Task(InterfaceState.I_WORK, 1000, wkq, SocketState.WAITPKT, workfn, InterfaceState.I_HANDLERA, 0)
 
-    wkq = Packet(0, I_DEVA, K_DEV)
-    wkq = Packet(wkq, I_DEVA, K_DEV)
-    wkq = Packet(wkq, I_DEVA, K_DEV)
+    wkq = Packet(0, InterfaceState.I_DEVA, Kind.K_DEV)
+    wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
+    wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
 
-    Task(I_HANDLERA, 2000, wkq, S_WAITPKT, handlerfn, 0, 0)
+    Task(InterfaceState.I_HANDLERA, 2000, wkq, SocketState.WAITPKT, handlerfn, 0, 0)
 
-    wkq = Packet(0, I_DEVB, K_DEV)
-    wkq = Packet(wkq, I_DEVB, K_DEV)
-    wkq = Packet(wkq, I_DEVB, K_DEV)
+    wkq = Packet(0, InterfaceState.I_DEVB, Kind.K_DEV)
+    wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
+    wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
 
-    Task(I_HANDLERB, 3000, wkq, S_WAITPKT, handlerfn, 0, 0)
+    Task(InterfaceState.I_HANDLERB, 3000, wkq, SocketState.WAITPKT, handlerfn, 0, 0)
 
     wkq = 0
-    Task(I_DEVA, 4000, wkq, S_WAIT, devfn, 0, 0)
-    Task(I_DEVB, 5000, wkq, S_WAIT, devfn, 0, 0)
+    Task(InterfaceState.I_DEVA, 4000, wkq, SocketState.WAIT, devfn, 0, 0)
+    Task(InterfaceState.I_DEVB, 5000, wkq, SocketState.WAIT, devfn, 0, 0)
 
     tcb = tasklist
 
