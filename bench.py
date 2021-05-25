@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #  C version of the systems programming language benchmark 
 #  Author:  M. J. Jordan  Cambridge Computer Laboratory. 
 #  
@@ -93,9 +93,9 @@ tasktab  =  [10,0,0,0,0,0,0,0,0,0,0]
 # Variables used in global statements
 tasklist    =  0
 tcb         = None
-taskid      = 0L
-v1          = 0L
-v2          = 0L
+taskid      = 0
+v1          = 0
+v2          = 0
 qpktcount   =  0
 holdcount   =  0
 tracing     =  0
@@ -161,7 +161,7 @@ def findtcb(id):
     if (1<=id and id<=tasktab[0]):
         t = tasktab[id]
     if (t==0):
-        print "Bad task id %i"%id
+        print("Bad task id %i"%id)
     return(t)
 
 def release(id):
@@ -280,7 +280,7 @@ def bench():
     global tcb, qpktcount, holdcount, tracing, layout
     wkq = 0
 
-    print "Bench mark starting"
+    print("Bench mark starting")
 
     Task(I_IDLE, 0, wkq, S_RUN, idlefn, 1, Count)
 
@@ -309,25 +309,25 @@ def bench():
 
     qpktcount = holdcount = 0
 
-    print "Starting"
+    print("Starting")
 
     tracing = False
     layout = 0
 
     schedule()
 
-    print "\nfinished"
+    print("\nfinished")
 
-    print "qpkt count = %i  holdcount = %i"%(
-           qpktcount, holdcount)
+    print("qpkt count = %i  holdcount = %i"%(
+           qpktcount, holdcount))
 
-    print "These results are",
+    print("These results are", end=' ')
     if (qpktcount == Qpktcountval and holdcount == Holdcountval):
-        print "correct"
+        print("correct")
     else:
-        print "incorrect"
+        print("incorrect")
 
-    print "end of run"
+    print("end of run")
     return 0
 
 # Perform the Bench mark:
