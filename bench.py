@@ -339,66 +339,60 @@ def append(pkt, ptr):
     ptr.link = pkt
 
 
-def bench():
+def bench(iters):
     global tcb, qpktcount, holdcount, tracing, layout
-    wkq = None
 
-    print("Bench mark starting")
+    for i in range(iters):
+        wkq = None
 
-    v1 = Register.VALUE(1)
-    v2 = Register.VALUE(Count)
-    Task(InterfaceState.I_IDLE, 0, wkq, SocketState.RUN, idlefn, v1, v2)
+        v1 = Register.VALUE(1)
+        v2 = Register.VALUE(Count)
+        Task(InterfaceState.I_IDLE, 0, wkq, SocketState.RUN, idlefn, v1, v2)
 
-    wkq = Packet(None, 0, Kind.K_WORK)
-    wkq = Packet(wkq, 0, Kind.K_WORK)
+        wkq = Packet(None, 0, Kind.K_WORK)
+        wkq = Packet(wkq, 0, Kind.K_WORK)
 
-    v1 = Register.VALUE(InterfaceState.I_HANDLERA)
-    v2 = Register.VALUE(0)
-    Task(InterfaceState.I_WORK, 1000, wkq, SocketState.WAITPKT, workfn, v1, v2)
+        v1 = Register.VALUE(InterfaceState.I_HANDLERA)
+        v2 = Register.VALUE(0)
+        Task(InterfaceState.I_WORK, 1000, wkq, SocketState.WAITPKT, workfn, v1, v2)
 
-    wkq = Packet(None, InterfaceState.I_DEVA, Kind.K_DEV)
-    wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
-    wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
+        wkq = Packet(None, InterfaceState.I_DEVA, Kind.K_DEV)
+        wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
+        wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
 
-    v1 = Register.VALUE(0)
-    v2 = Register.VALUE(0)
-    Task(InterfaceState.I_HANDLERA, 2000, wkq, SocketState.WAITPKT, handlerfn, v1, v2)
+        v1 = Register.VALUE(0)
+        v2 = Register.VALUE(0)
+        Task(
+            InterfaceState.I_HANDLERA, 2000, wkq, SocketState.WAITPKT, handlerfn, v1, v2
+        )
 
-    wkq = Packet(None, InterfaceState.I_DEVB, Kind.K_DEV)
-    wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
-    wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
+        wkq = Packet(None, InterfaceState.I_DEVB, Kind.K_DEV)
+        wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
+        wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
 
-    Task(InterfaceState.I_HANDLERB, 3000, wkq, SocketState.WAITPKT, handlerfn, v1, v2)
+        Task(
+            InterfaceState.I_HANDLERB, 3000, wkq, SocketState.WAITPKT, handlerfn, v1, v2
+        )
 
-    wkq = None
-    Task(InterfaceState.I_DEVA, 4000, wkq, SocketState.WAIT, devfn, v1, v2)
-    Task(InterfaceState.I_DEVB, 5000, wkq, SocketState.WAIT, devfn, v1, v2)
+        wkq = None
+        Task(InterfaceState.I_DEVA, 4000, wkq, SocketState.WAIT, devfn, v1, v2)
+        Task(InterfaceState.I_DEVB, 5000, wkq, SocketState.WAIT, devfn, v1, v2)
 
-    tcb = tasklist
+        tcb = tasklist
 
-    qpktcount = holdcount = 0
+        qpktcount = holdcount = 0
 
-    print("Starting")
+        tracing = False
+        layout = 0
 
-    tracing = False
-    layout = 0
+        schedule()
 
-    schedule()
-
-    print("\nfinished")
-
-    print("qpkt count = %i  holdcount = %i" % (qpktcount, holdcount))
-
-    print("These results are", end=" ")
-    if qpktcount == Qpktcountval and holdcount == Holdcountval:
-        print("correct")
-    else:
-        print("incorrect")
-
-    print("end of run")
-    return 0
+        if qpktcount == Qpktcountval and holdcount == Holdcountval:
+            pass
+        else:
+            return False
 
 
 # Perform the Bench mark:
 if __name__ == "__main__":
-    bench()
+    bench(3)
