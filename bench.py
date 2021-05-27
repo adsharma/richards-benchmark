@@ -24,6 +24,7 @@
 from sys import stdout
 from dataclasses import dataclass, field
 from enum import IntEnum, IntFlag
+from adt import adt as sealed
 from typing import Any, Callable, Optional, List, Union
 
 # Change False to True for a version that obeys
@@ -37,6 +38,7 @@ Holdcountval = 9297
 MAXINT = 32767
 
 BUFSIZE = 3
+
 
 class InterfaceState(IntEnum):
     I_IDLE = 1
@@ -70,9 +72,10 @@ class Kind(IntEnum):
     K_DEV = 1000
     K_WORK = 1001
 
+
 @dataclass
 class Packet:
-    link: Union["Packet", int]
+    link: Optional["Packet"] = field(repr=False)
     id: int
     kind: Kind
     a1: int = 0
@@ -83,32 +86,47 @@ class Packet:
         self.a2 = [0] * (BUFSIZE + 1)
 
 
-alphabet = "0ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+@sealed
+class Register:
+    PACKET: Packet
+    VALUE: int
 
-tasktab: List[Union[int, "Task"]] = [10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+alphabet = "0ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 @dataclass
 class Task:
     id: int
     pri: int
-    wkq: Union[int, "Packet"]
+    wkq: Optional[Packet]
     state: SocketState
     fn: Callable
-    v1: Union[int, "Task"]
-    v2: Union[int, "Task"]
+    v1: Register
+    v2: Register
+
     def __post_init__(self):
         global tasklist
-        tasktab[self.id] = self
+        tasktab.entries[self.id + 1] = self
         self.link = tasklist
         tasklist = self
 
+
+@dataclass
+class Tasktab:
+    limit: int
+    entries: List[Optional[Task]]
+
+
+tasktab: Tasktab = Tasktab(10, [None] * 10)
+
+
 # Variables used in global statements
-tasklist = 0
-tcb = 0
+tasklist = None
+tcb = None
 taskid = 0
-v1: Union[int, Task, Packet] = 0
-v2: Union[int, Task, Packet] = 0
+v1: Register = Register.VALUE(0)
+v2: Register = Register.VALUE(0)
 qpktcount = 0
 holdcount = 0
 tracing = 0
@@ -127,17 +145,15 @@ def trace(a):
 
 def schedule():
     global tcb, taskid, v1, v2
-    while tcb != 0:
-        pkt = 0
-        assert isinstance(tcb, Task)
+    while tcb is not None:
+        pkt = None
 
         sw = tcb.state
         done = False
         if sw == SocketState.WAITPKT:
             pkt = tcb.wkq
-            assert isinstance(pkt, Packet)
             tcb.wkq = pkt.link
-            if tcb.wkq == 0:
+            if tcb.wkq is None:
                 tcb.state = SocketState.RUN
             else:
                 tcb.state = SocketState.RUNPKT
@@ -155,7 +171,13 @@ def schedule():
             tcb = newtcb
             done = True
 
-        if sw in [SocketState.WAIT, SocketState.HOLD, SocketState.HOLDPKT, SocketState.HOLDWAIT, SocketState.HOLDWAITPKT]:
+        if sw in [
+            SocketState.WAIT,
+            SocketState.HOLD,
+            SocketState.HOLDPKT,
+            SocketState.HOLDWAIT,
+            SocketState.HOLDWAITPKT,
+        ]:
             tcb = tcb.link
             done = True
 
@@ -164,7 +186,6 @@ def schedule():
 
 
 def wait():
-    assert isinstance(tcb, Task)
     tcb.state |= SocketState.WAITBIT
     return tcb
 
@@ -172,29 +193,25 @@ def wait():
 def holdself():
     global holdcount
     holdcount += 1
-    assert isinstance(tcb, Task)
     tcb.state |= SocketState.HOLDBIT
     return tcb.link
 
 
-def findtcb(id: int) -> Union[int, Task]:
-    t = 0
-    id0 = tasktab[0]
-    assert isinstance(id0, int)
-    if 1 <= id and id <= id0:
-        t = tasktab[id]
-    if t == 0:
+def findtcb(id: int) -> Optional[Task]:
+    t = None
+    limit = tasktab.limit
+    if 1 <= id and id <= limit:
+        t = tasktab.entries[id + 1]
+    if t is None:
         print("Bad task id %i" % id)
     return t
 
 
-def release(id) -> Union[int, Task]:
+def release(id) -> Optional[Task]:
     t = findtcb(id)
-    if t == 0:
-        return 0
+    if t is None:
+        return t
 
-    assert isinstance(t, Task)
-    assert isinstance(tcb, Task)
     t.state &= SocketState.NOTHOLDBIT
     if t.pri > tcb.pri:
         return t
@@ -205,17 +222,15 @@ def release(id) -> Union[int, Task]:
 def qpkt(pkt):
     global qpktcount
     t = findtcb(pkt.id)
-    if t == 0:
+    if t is None:
         return t
-    assert isinstance(t, Task)
-    assert isinstance(tcb, Task)
 
     qpktcount += 1
 
-    pkt.link = 0
+    pkt.link = None
     pkt.id = taskid
 
-    if t.wkq == 0:
+    if t.wkq is None:
         t.wkq = pkt
         t.state |= SocketState.PKTBIT
         if t.pri > tcb.pri:
@@ -228,67 +243,73 @@ def qpkt(pkt):
 
 def idlefn(pkt):
     global v1, v2
-    assert isinstance(v1, int)
-    assert isinstance(v2, int)
-    v2 -= 1
-    if v2 == 0:
+    v2 = Register.VALUE(v2.value() - 1)
+    if v2.value() == 0:
         return holdself()
 
-    if (v1 & 1) == 0:
-        v1 = (v1 >> 1) & MAXINT
+    if (v1.value() & 1) == 0:
+        v1 = Register.VALUE((v1.value() >> 1) & MAXINT)
         return release(InterfaceState.I_DEVA)
     else:
-        v1 = ((v1 >> 1) & MAXINT) ^ 0xD008
+        v1 = Register.VALUE(((v1.value() >> 1) & MAXINT) ^ 0xD008)
         return release(InterfaceState.I_DEVB)
 
 
 def workfn(pkt):
     global v1, v2
-    if pkt == 0:
+    if pkt is None:
         return wait()
     else:
 
-        assert isinstance(v1, int)
-        assert isinstance(v2, int)
-        v1 = InterfaceState.I_HANDLERA + InterfaceState.I_HANDLERB - v1
-        pkt.id = v1
+        v1 = Register.VALUE(
+            (InterfaceState.I_HANDLERA + InterfaceState.I_HANDLERB - v1.value())
+        )
+        pkt.id = v1.value()
 
         pkt.a1 = 0
         for i in range(0, BUFSIZE + 1):
-            v2 += 1
-            if v2 > 26:
-                v2 = 1
-            pkt.a2[i] = ord(alphabet[v2])
+            value = v2.value()
+            value += 1
+            if value > 26:
+                value = 1
+            v2 = Register.VALUE(value)
+            pkt.a2[i] = ord(alphabet[v2.value()])
         return qpkt(pkt)
 
 
 def handlerfn(pkt):
     global v1, v2
-    if pkt != 0:
+    if pkt is not None:
         if pkt.kind == Kind.K_WORK:
-            assert isinstance(v1, (Packet, int))
-            x = Packet(v1, 0, Kind.K_DEV)
+            link = None if v1.is_value() else v1.packet()
+            x = Packet(link, 0, Kind.K_DEV)
             append(pkt, x)
-            v1 = x.link
+            v1 = Register.PACKET(x.link)
         else:
-            assert isinstance(v2, (Packet, int))
-            x = Packet(v2, 0, Kind.K_DEV)
+            link = None if v2.is_value() else v2.packet()
+            x = Packet(link, 0, Kind.K_DEV)
             append(pkt, x)
-            v2 = x.link
+            v2 = Register.PACKET(x.link)
 
-    if v1 != 0:
-        assert isinstance(v1, Packet)
-        workpkt = v1
+    if v1.is_packet():
+        workpkt: Packet = v1.packet()
         count = workpkt.a1
 
         if count > BUFSIZE:
-            v1 = v1.link
+            v1 = (
+                Register.PACKET(workpkt.link)
+                if workpkt.link is not None
+                else Register.VALUE(0)
+            )
             return qpkt(workpkt)
 
-        if v2 != 0:
-            assert isinstance(v2, Packet)
-            devpkt = v2
-            v2 = v2.link
+        if v2.is_packet():
+            devpkt: Packet = v2.packet()
+            v2 = (
+                Register.PACKET(devpkt.link)
+                if devpkt.link is not None
+                else Register.VALUE(0)
+            )
             devpkt.a1 = workpkt.a2[count]
             workpkt.a1 = count + 1
             return qpkt(devpkt)
@@ -297,21 +318,21 @@ def handlerfn(pkt):
 
 def devfn(pkt):
     global v1
-    if pkt == 0:
-        if v1 == 0:
+    if pkt is None:
+        if v1.is_value() and v1.value() == 0:
             return wait()
-        pkt = v1
-        v1 = 0
+        pkt: Packet = v1.packet()
+        v1 = Register.VALUE(0)
         return qpkt(pkt)
     else:
-        v1 = pkt
+        v1 = Register.PACKET(pkt)
         if tracing:
             trace(pkt.a1)
         return holdself()
 
 
 def append(pkt, ptr):
-    pkt.link = 0
+    pkt.link = None
     while ptr.link:
         ptr = ptr.link
 
@@ -320,32 +341,38 @@ def append(pkt, ptr):
 
 def bench():
     global tcb, qpktcount, holdcount, tracing, layout
-    wkq = 0
+    wkq = None
 
     print("Bench mark starting")
 
-    Task(InterfaceState.I_IDLE, 0, wkq, SocketState.RUN, idlefn, 1, Count)
+    v1 = Register.VALUE(1)
+    v2 = Register.VALUE(Count)
+    Task(InterfaceState.I_IDLE, 0, wkq, SocketState.RUN, idlefn, v1, v2)
 
-    wkq = Packet(0, 0, Kind.K_WORK)
+    wkq = Packet(None, 0, Kind.K_WORK)
     wkq = Packet(wkq, 0, Kind.K_WORK)
 
-    Task(InterfaceState.I_WORK, 1000, wkq, SocketState.WAITPKT, workfn, InterfaceState.I_HANDLERA, 0)
+    v1 = Register.VALUE(InterfaceState.I_HANDLERA)
+    v2 = Register.VALUE(0)
+    Task(InterfaceState.I_WORK, 1000, wkq, SocketState.WAITPKT, workfn, v1, v2)
 
-    wkq = Packet(0, InterfaceState.I_DEVA, Kind.K_DEV)
+    wkq = Packet(None, InterfaceState.I_DEVA, Kind.K_DEV)
     wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
     wkq = Packet(wkq, InterfaceState.I_DEVA, Kind.K_DEV)
 
-    Task(InterfaceState.I_HANDLERA, 2000, wkq, SocketState.WAITPKT, handlerfn, 0, 0)
+    v1 = Register.VALUE(0)
+    v2 = Register.VALUE(0)
+    Task(InterfaceState.I_HANDLERA, 2000, wkq, SocketState.WAITPKT, handlerfn, v1, v2)
 
-    wkq = Packet(0, InterfaceState.I_DEVB, Kind.K_DEV)
+    wkq = Packet(None, InterfaceState.I_DEVB, Kind.K_DEV)
     wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
     wkq = Packet(wkq, InterfaceState.I_DEVB, Kind.K_DEV)
 
-    Task(InterfaceState.I_HANDLERB, 3000, wkq, SocketState.WAITPKT, handlerfn, 0, 0)
+    Task(InterfaceState.I_HANDLERB, 3000, wkq, SocketState.WAITPKT, handlerfn, v1, v2)
 
-    wkq = 0
-    Task(InterfaceState.I_DEVA, 4000, wkq, SocketState.WAIT, devfn, 0, 0)
-    Task(InterfaceState.I_DEVB, 5000, wkq, SocketState.WAIT, devfn, 0, 0)
+    wkq = None
+    Task(InterfaceState.I_DEVA, 4000, wkq, SocketState.WAIT, devfn, v1, v2)
+    Task(InterfaceState.I_DEVB, 5000, wkq, SocketState.WAIT, devfn, v1, v2)
 
     tcb = tasklist
 

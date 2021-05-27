@@ -1,4 +1,4 @@
-Richard's Benchmark 
+Richard's Benchmark
 
 This is a benchmark from 1999 distributed from:
 
